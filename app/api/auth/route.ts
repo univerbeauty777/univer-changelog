@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 const SITE_PASSWORD = process.env.SITE_PASSWORD || 'JESUS'
 const COOKIE_NAME = 'uc_auth'
 const ONE_YEAR = 60 * 60 * 24 * 365

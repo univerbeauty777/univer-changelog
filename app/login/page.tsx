@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function LoginPage() {
+export const dynamic = 'force-dynamic'
+
+function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
   const [password, setPassword] = useState('')
@@ -21,7 +23,7 @@ export default function LoginPage() {
         body: JSON.stringify({ password }),
       })
       if (res.ok) {
-        const from = params.get('from') || '/'
+        const from = params?.get('from') || '/'
         router.push(from)
         router.refresh()
       } else {
@@ -35,6 +37,52 @@ export default function LoginPage() {
     }
   }
 
+  return (
+    <form onSubmit={handleSubmit} className="login-form">
+      <label className="login-label">
+        <span>Senha de acesso</span>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+          autoFocus
+          required
+        />
+      </label>
+
+      {error && (
+        <div className="login-error">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          {error}
+        </div>
+      )}
+
+      <button type="submit" disabled={loading} className="login-submit">
+        {loading ? (
+          <>
+            <div className="login-spinner" />
+            Verificando…
+          </>
+        ) : (
+          <>
+            Entrar
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </>
+        )}
+      </button>
+    </form>
+  )
+}
+
+export default function LoginPage() {
   return (
     <div className="login-shell">
       <div className="login-card">
@@ -55,47 +103,9 @@ export default function LoginPage() {
 
         <div className="login-divider" />
 
-        <form onSubmit={handleSubmit} className="login-form">
-          <label className="login-label">
-            <span>Senha de acesso</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoFocus
-              required
-            />
-          </label>
-
-          {error && (
-            <div className="login-error">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              {error}
-            </div>
-          )}
-
-          <button type="submit" disabled={loading} className="login-submit">
-            {loading ? (
-              <>
-                <div className="login-spinner" />
-                Verificando…
-              </>
-            ) : (
-              <>
-                Entrar
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                  <polyline points="12 5 19 12 12 19"/>
-                </svg>
-              </>
-            )}
-          </button>
-        </form>
+        <Suspense fallback={<div className="login-form"><div className="login-spinner" /></div>}>
+          <LoginForm />
+        </Suspense>
 
         <div className="login-footer">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
