@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  slug        String          @unique
+  description String?
+  icon        String?         // Emoji ou URL
+  color       String?         // Hex color para UI
+  repoUrl     String?         // GitHub repo URL
+  active      Boolean         @default(true)
+  order       Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  entries     ChangelogEntry[]
+
+  @@index([slug])
+  @@index([active])
+  @@map("projects")
+}
+
+model ChangelogEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  version     String?  // Semantic version (1.0.0)
+  type        String   // feature, fix, breaking, chore, docs, refactor, perf, test
+  title       String
+  description String?  @db.Text
+  
+  author      String?  // Nome do autor
+  commitHash  String?  // Git commit hash
+  prUrl       String?  // Pull Request URL
+  issueUrl    String?  // Issue/Ticket URL
+  
+  tags        String[] // Array de tags customizáveis
+  
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+  @@index([date])
+  @@index([version])
+  @@map("changelog_entries")
+}

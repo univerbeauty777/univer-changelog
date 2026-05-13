@@ -1,0 +1,752 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { format } from 'date-fns'
+import ReactMarkdown from 'react-markdown'
+
+interface Project {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  icon: string | null
+  color: string | null
+  _count: { entries: number }
+}
+
+interface ChangelogEntry {
+  id: string
+  projectId: string
+  project: Project
+  version: string | null
+  type: string
+  title: string
+  description: string | null
+  author: string | null
+  commitHash: string | null
+  prUrl: string | null
+  issueUrl: string | null
+  tags: string[]
+  date: string
+}
+
+const typeEmojis: Record<string, string> = {
+  feature: '✨',
+  fix: '🐛',
+  breaking: '💥',
+  chore: '🔧',
+  docs: '📝',
+  refactor: '♻️',
+  perf: '⚡',
+  test: '✅'
+}
+
+export default function ChangelogManager() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [entries, setEntries] = useState<ChangelogEntry[]>([])
+  const [filteredEntries, setFilteredEntries] = useState<ChangelogEntry[]>([])
+  const [selectedProject, setSelectedProject] = useState<string>('all')
+  const [selectedType, setSelectedType] = useState<string>('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editingEntry, setEditingEntry] = useState<ChangelogEntry | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+
+  // Form state
+  const [formData, setFormData] = useState({
+    projectId: '',
+    version: '',
+    type: 'feature',
+    title: '',
+    description: '',
+    author: 'Diego',
+    commitHash: '',
+    prUrl: '',
+    issueUrl: '',
+    tags: '',
+    date: new Date().toISOString().split('T')[0]
+  })
+
+  useEffect(() => {
+    loadProjects()
+    loadEntries()
+  }, [])
+
+  useEffect(() => {
+    filterEntries()
+  }, [entries, selectedProject, selectedType, searchTerm, startDate, endDate])
+
+  const loadProjects = async () => {
+    const res = await fetch('/api/projects')
+    const data = await res.json()
+    setProjects(data)
+  }
+
+  const loadEntries = async () => {
+    setLoading(true)
+    const res = await fetch('/api/changelog')
+    const data = await res.json()
+    setEntries(data)
+    setLoading(false)
+  }
+
+  const filterEntries = () => {
+    let filtered = entries
+
+    if (selectedProject !== 'all') {
+      filtered = filtered.filter(e => e.projectId === selectedProject)
+    }
+
+    if (selectedType) {
+      filtered = filtered.filter(e => e.type === selectedType)
+    }
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(e =>
+        e.title.toLowerCase().includes(term) ||
+        e.description?.toLowerCase().includes(term)
+      )
+    }
+
+    if (startDate) {
+      filtered = filtered.filter(e => new Date(e.date) >= new Date(startDate))
+    }
+
+    if (endDate) {
+      filtered = filtered.filter(e => new Date(e.date) <= new Date(endDate))
+    }
+
+    setFilteredEntries(filtered)
+    setCurrentPage(1)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const payload = {
+      ...formData,
+      tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : []
+    }
+
+    if (editingEntry) {
+      await fetch('/api/changelog', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingEntry.id, ...payload })
+      })
+    } else {
+      await fetch('/api/changelog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+    }
+
+    setShowModal(false)
+    setEditingEntry(null)
+    resetForm()
+    loadEntries()
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir esta entrada?')) return
+    await fetch(`/api/changelog?id=${id}`, { method: 'DELETE' })
+    loadEntries()
+  }
+
+  const handleEdit = (entry: ChangelogEntry) => {
+    setEditingEntry(entry)
+    setFormData({
+      projectId: entry.projectId,
+      version: entry.version || '',
+      type: entry.type,
+      title: entry.title,
+      description: entry.description || '',
+      author: entry.author || 'Diego',
+      commitHash: entry.commitHash || '',
+      prUrl: entry.prUrl || '',
+      issueUrl: entry.issueUrl || '',
+      tags: entry.tags.join(', '),
+      date: entry.date.split('T')[0]
+    })
+    setShowModal(true)
+  }
+
+  const resetForm = () => {
+    setFormData({
+      projectId: '',
+      version: '',
+      type: 'feature',
+      title: '',
+      description: '',
+      author: 'Diego',
+      commitHash: '',
+      prUrl: '',
+      issueUrl: '',
+      tags: '',
+      date: new Date().toISOString().split('T')[0]
+    })
+  }
+
+  const handleExport = async (projectId: string) => {
+    const url = `/api/export?projectId=${projectId}`
+    window.open(url, '_blank')
+  }
+
+  // Stats calculations
+  const stats = {
+    total: filteredEntries.length,
+    features: filteredEntries.filter(e => e.type === 'feature').length,
+    fixes: filteredEntries.filter(e => e.type === 'fix').length,
+    breaking: filteredEntries.filter(e => e.type === 'breaking').length
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(filteredEntries.length / pageSize)
+  const startIdx = (currentPage - 1) * pageSize
+  const endIdx = Math.min(startIdx + pageSize, filteredEntries.length)
+  const currentEntries = filteredEntries.slice(startIdx, endIdx)
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <div className="loading" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="container">
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', color: '#fff', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+            📝
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>UniverChangelog</h2>
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {filteredEntries.length} {filteredEntries.length === 1 ? 'entrada' : 'entradas'}
+              {selectedProject !== 'all' && ` em ${projects.find(p => p.id === selectedProject)?.name}`}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {selectedProject !== 'all' && (
+            <button
+              className="btn btn-sm"
+              onClick={() => handleExport(selectedProject)}
+              style={{ fontSize: '0.75rem', padding: '6px 12px', borderRadius: '8px' }}
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export .md
+            </button>
+          )}
+          <button
+            className="btn btn-primary"
+            onClick={() => { resetForm(); setShowModal(true) }}
+            style={{ fontSize: '0.8rem', padding: '8px 18px', borderRadius: '10px', fontWeight: 600, boxShadow: '0 2px 8px rgba(99,102,241,0.25)' }}
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Nova Entrada
+          </button>
+        </div>
+      </div>
+
+      {/* STATS BAR */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="18" height="18" fill="none" stroke="var(--primary)" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>TOTAL</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.total}</div>
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
+            ✨
+          </div>
+          <div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>FEATURES</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.features}</div>
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
+            🐛
+          </div>
+          <div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>FIXES</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.fixes}</div>
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
+            💥
+          </div>
+          <div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>BREAKING</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{stats.breaking}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* PROJECTS TABS */}
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '16px', padding: '4px', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <button
+          onClick={() => setSelectedProject('all')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            background: selectedProject === 'all' ? 'var(--primary)' : 'transparent',
+            color: selectedProject === 'all' ? '#fff' : 'var(--text-primary)',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.15s'
+          }}
+        >
+          Todos os Projetos
+        </button>
+        {projects.map(project => (
+          <button
+            key={project.id}
+            onClick={() => setSelectedProject(project.id)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              background: selectedProject === project.id ? 'var(--primary)' : 'transparent',
+              color: selectedProject === project.id ? '#fff' : 'var(--text-primary)',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s'
+            }}
+          >
+            <span>{project.icon}</span>
+            {project.name}
+            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>({project._count.entries})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* TOOLBAR */}
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '14px', padding: '12px 16px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '180px', maxWidth: '280px' }}>
+            <svg width="14" height="14" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} fill="none" stroke="var(--text-muted)" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ paddingLeft: '32px', width: '100%', borderRadius: '8px', height: '34px', fontSize: '0.8rem' }}
+            />
+          </div>
+
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            style={{ height: '34px', borderRadius: '8px', fontSize: '0.78rem', padding: '0 10px', minWidth: '110px' }}
+          >
+            <option value="">Todos os tipos</option>
+            <option value="feature">✨ Feature</option>
+            <option value="fix">🐛 Fix</option>
+            <option value="breaking">💥 Breaking</option>
+            <option value="chore">🔧 Chore</option>
+            <option value="docs">📝 Docs</option>
+            <option value="refactor">♻️ Refactor</option>
+            <option value="perf">⚡ Perf</option>
+            <option value="test">✅ Test</option>
+          </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              style={{ height: '34px', borderRadius: '8px', fontSize: '0.75rem', padding: '0 8px' }}
+            />
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>até</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              style={{ height: '34px', borderRadius: '8px', fontSize: '0.75rem', padding: '0 8px' }}
+            />
+          </div>
+
+          {(searchTerm || selectedType || startDate || endDate) && (
+            <button
+              onClick={() => {
+                setSearchTerm('')
+                setSelectedType('')
+                setStartDate('')
+                setEndDate('')
+              }}
+              className="btn btn-sm"
+              style={{ height: '34px', fontSize: '0.75rem' }}
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* TABLE */}
+      {currentEntries.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">📝</div>
+          <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Nenhuma entrada encontrada
+          </p>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            {selectedProject !== 'all' || searchTerm || selectedType
+              ? 'Tente ajustar os filtros'
+              : 'Comece adicionando sua primeira entrada de changelog'}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => { resetForm(); setShowModal(true) }}
+            style={{ borderRadius: '10px', padding: '10px 24px' }}
+          >
+            + Adicionar Primeira Entrada
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={{ borderRadius: '14px', overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: '80px' }}>Data</th>
+                  <th style={{ width: '120px' }}>Projeto</th>
+                  <th style={{ width: '80px' }}>Versão</th>
+                  <th style={{ width: '100px' }}>Tipo</th>
+                  <th>Título</th>
+                  <th style={{ width: '100px' }}>Autor</th>
+                  <th style={{ width: '120px' }}>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentEntries.map(entry => (
+                  <tr key={entry.id}>
+                    <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {format(new Date(entry.date), 'dd/MM/yy')}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{entry.project.icon}</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{entry.project.name}</span>
+                      </div>
+                    </td>
+                    <td>
+                      {entry.version ? (
+                        <code style={{ fontSize: '0.75rem', padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: '4px' }}>
+                          {entry.version}
+                        </code>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${entry.type}`}>
+                        {typeEmojis[entry.type]} {entry.type}
+                      </span>
+                    </td>
+                    <td>
+                      <div>
+                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>{entry.title}</div>
+                        {entry.description && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {entry.description}
+                          </div>
+                        )}
+                        {entry.tags.length > 0 && (
+                          <div style={{ marginTop: '4px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {entry.tags.map(tag => (
+                              <span key={tag} style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'var(--bg-tertiary)', borderRadius: '4px', color: 'var(--text-muted)' }}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ fontSize: '0.875rem' }}>{entry.author || '—'}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          onClick={() => handleEdit(entry)}
+                          className="btn btn-sm"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(entry.id)}
+                          className="btn btn-sm btn-danger"
+                          style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* PAGINATION */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', padding: '12px 16px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 14px 14px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                Mostrando {startIdx + 1}-{endIdx} de <strong>{filteredEntries.length}</strong>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="btn btn-sm"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  &laquo;
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => p - 1)}
+                  disabled={currentPage === 1}
+                  className="btn btn-sm"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  &lsaquo;
+                </button>
+                <span style={{ fontSize: '0.875rem', padding: '0 8px' }}>
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => p + 1)}
+                  disabled={currentPage === totalPages}
+                  className="btn btn-sm"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  &rsaquo;
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="btn btn-sm"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  &raquo;
+                </button>
+                <div style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(parseInt(e.target.value)); setCurrentPage(1) }}
+                  style={{ height: '28px', fontSize: '0.75rem', padding: '0 8px' }}
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="250">250</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* MODAL */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => { setShowModal(false); setEditingEntry(null) }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                {editingEntry ? 'Editar Entrada' : 'Nova Entrada de Changelog'}
+              </h3>
+              <button
+                onClick={() => { setShowModal(false); setEditingEntry(null) }}
+                style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Projeto *</label>
+                  <select
+                    value={formData.projectId}
+                    onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
+                    required
+                  >
+                    <option value="">Selecione um projeto</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.icon} {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Versão</label>
+                    <input
+                      type="text"
+                      placeholder="1.0.0"
+                      value={formData.version}
+                      onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Tipo *</label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      required
+                    >
+                      <option value="feature">✨ Feature</option>
+                      <option value="fix">🐛 Fix</option>
+                      <option value="breaking">💥 Breaking Change</option>
+                      <option value="chore">🔧 Chore</option>
+                      <option value="docs">📝 Docs</option>
+                      <option value="refactor">♻️ Refactor</option>
+                      <option value="perf">⚡ Performance</option>
+                      <option value="test">✅ Test</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Título *</label>
+                  <input
+                    type="text"
+                    placeholder="Descreva a mudança em uma linha"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Descrição (Markdown)</label>
+                  <textarea
+                    placeholder="Descrição detalhada (suporta Markdown)"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={4}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Autor</label>
+                    <input
+                      type="text"
+                      placeholder="Diego"
+                      value={formData.author}
+                      onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Data</label>
+                    <input
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Commit Hash</label>
+                  <input
+                    type="text"
+                    placeholder="abc123def456"
+                    value={formData.commitHash}
+                    onChange={(e) => setFormData({ ...formData, commitHash: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label className="form-label">PR URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://github.com/user/repo/pull/123"
+                      value={formData.prUrl}
+                      onChange={(e) => setFormData({ ...formData, prUrl: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Issue URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://github.com/user/repo/issues/123"
+                      value={formData.issueUrl}
+                      onChange={(e) => setFormData({ ...formData, issueUrl: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Tags</label>
+                  <input
+                    type="text"
+                    placeholder="frontend, backend, api (separadas por vírgula)"
+                    value={formData.tags}
+                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                  />
+                  <p className="form-hint">Separe múltiplas tags com vírgula</p>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); setEditingEntry(null) }}
+                  className="btn"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {editingEntry ? 'Atualizar' : 'Criar'} Entrada
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
