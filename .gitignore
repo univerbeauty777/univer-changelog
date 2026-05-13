@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+*.log
+.DS_Store
+
+# Scripts e docs locais
+push-auto.sh
+PUSH-GITHUB.sh
+COMO-EXECUTAR.md
+DEPLOY-COMPLETO.md
+EXECUTAR-AGORA.txt
