@@ -8,8 +8,17 @@ interface Project {
   slug: string
   icon: string
   color: string
+  category: string | null
   repoUrl: string | null
 }
+
+const CATEGORIES: { key: string; label: string }[] = [
+  { key: 'APPS',       label: 'Apps' },
+  { key: 'EXTENSOES',  label: 'Extensões' },
+  { key: 'PORTAL_LMS', label: 'Portal / LMS' },
+  { key: 'PLUGINS',    label: 'Plugins' },
+  { key: 'SITES',      label: 'Sites' },
+]
 
 interface ChangelogEntry {
   id: string
@@ -109,6 +118,7 @@ export default function ChangelogManager() {
   const [workspaceMenu, setWorkspaceMenu] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
 
   const [formData, setFormData] = useState({
     version: '', type: 'feature' as ChangelogEntry['type'],
@@ -119,8 +129,12 @@ export default function ChangelogManager() {
   useEffect(() => {
     const t = (localStorage.getItem('uc-theme') as 'dark' | 'light') || 'dark'
     const c = localStorage.getItem('uc-sidebar-collapsed') === '1'
+    const cats = localStorage.getItem('uc-collapsed-cats')
     setTheme(t)
     setSidebarCollapsed(c)
+    if (cats) {
+      try { setCollapsedCats(JSON.parse(cats)) } catch {}
+    }
   }, [])
 
   useEffect(() => {
@@ -131,6 +145,10 @@ export default function ChangelogManager() {
   useEffect(() => {
     localStorage.setItem('uc-sidebar-collapsed', sidebarCollapsed ? '1' : '0')
   }, [sidebarCollapsed])
+
+  useEffect(() => {
+    localStorage.setItem('uc-collapsed-cats', JSON.stringify(collapsedCats))
+  }, [collapsedCats])
 
   // ─── Data
   useEffect(() => {
@@ -298,36 +316,65 @@ export default function ChangelogManager() {
           </div>
         )}
 
-        {/* Section: Workspaces */}
+        {/* Section: Workspaces grouped by category */}
         <div className="sidebar-section">
-          {!sidebarCollapsed && (
-            <div className="sidebar-label">
-              <span>PROJETOS</span>
-              <span className="badge">{projects.length}</span>
-            </div>
-          )}
           <nav className="sidebar-nav">
-            {projects
-              .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
-              .map(project => {
-                const isActive = selectedProject?.id === project.id
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => { setSelectedProject(project); setSelectedVersion(null); }}
-                    className={`nav-item ${isActive ? 'active' : ''}`}
-                    title={sidebarCollapsed ? project.name : undefined}
-                  >
-                    <ProjectAvatar project={project} />
-                    {!sidebarCollapsed && (
-                      <>
-                        <span className="nav-label">{project.name}</span>
-                        {isActive && <span className="nav-active-dot" />}
-                      </>
-                    )}
-                  </button>
-                )
-              })}
+            {CATEGORIES.map(cat => {
+              const filteredProjects = projects
+                .filter(p => (p.category || 'APPS') === cat.key)
+                .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+              
+              const isCollapsed = collapsedCats[cat.key]
+              
+              // Skip category if empty AND searching
+              if (filteredProjects.length === 0 && search) return null
+              
+              return (
+                <div key={cat.key} className="cat-group">
+                  {!sidebarCollapsed && (
+                    <button
+                      className="cat-header"
+                      onClick={() => setCollapsedCats({ ...collapsedCats, [cat.key]: !isCollapsed })}
+                    >
+                      <span className={`cat-chevron ${isCollapsed ? 'collapsed' : ''}`}>
+                        <Icon.ChevronDown />
+                      </span>
+                      <span className="cat-label">{cat.label}</span>
+                      <span className="cat-count">{filteredProjects.length}</span>
+                    </button>
+                  )}
+                  {sidebarCollapsed && filteredProjects.length > 0 && (
+                    <div className="cat-divider-collapsed" title={cat.label} />
+                  )}
+                  {(!isCollapsed || sidebarCollapsed) && (
+                    <div className="cat-items">
+                      {filteredProjects.map(project => {
+                        const isActive = selectedProject?.id === project.id
+                        return (
+                          <button
+                            key={project.id}
+                            onClick={() => { setSelectedProject(project); setSelectedVersion(null); }}
+                            className={`nav-item ${isActive ? 'active' : ''}`}
+                            title={sidebarCollapsed ? project.name : undefined}
+                          >
+                            <ProjectAvatar project={project} />
+                            {!sidebarCollapsed && (
+                              <>
+                                <span className="nav-label">{project.name}</span>
+                                {isActive && <span className="nav-active-dot" />}
+                              </>
+                            )}
+                          </button>
+                        )
+                      })}
+                      {filteredProjects.length === 0 && !sidebarCollapsed && (
+                        <div className="cat-empty">Em breve</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </nav>
         </div>
 

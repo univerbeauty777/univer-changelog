@@ -14,6 +14,7 @@ model Project {
   description String?
   icon        String?         // Emoji ou URL
   color       String?         // Hex color para UI
+  category    String?         // APPS, EXTENSOES, PORTAL_LMS, PLUGINS, SITES
   repoUrl     String?         // GitHub repo URL
   active      Boolean         @default(true)
   order       Int             @default(0)
@@ -23,6 +24,7 @@ model Project {
 
   @@index([slug])
   @@index([active])
+  @@index([category])
   @@map("projects")
 }
 
