@@ -8,19 +8,22 @@ datasource db {
 }
 
 model Project {
-  id          String          @id @default(cuid())
-  name        String          @unique
-  slug        String          @unique
+  id          String           @id @default(cuid())
+  name        String           @unique
+  slug        String           @unique
   description String?
-  icon        String?         // Emoji ou URL
-  color       String?         // Hex color para UI
-  category    String?         // APPS, EXTENSOES, PORTAL_LMS, PLUGINS, SITES
-  repoUrl     String?         // GitHub repo URL
-  active      Boolean         @default(true)
-  order       Int             @default(0)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  icon        String?
+  color       String?
+  category    String?          // APPS, EXTENSOES, PORTAL_LMS, PLUGINS, SITES
+  repoUrl     String?
+  active      Boolean          @default(true)
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
   entries     ChangelogEntry[]
+  roadmap     RoadmapItem[]
+  notes       Note[]
 
   @@index([slug])
   @@index([active])
@@ -32,19 +35,19 @@ model ChangelogEntry {
   id          String   @id @default(cuid())
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  version     String?  // Semantic version (1.0.0)
+
+  version     String?
   type        String   // feature, fix, breaking, chore, docs, refactor, perf, test
   title       String
   description String?  @db.Text
-  
-  author      String?  // Nome do autor
-  commitHash  String?  // Git commit hash
-  prUrl       String?  // Pull Request URL
-  issueUrl    String?  // Issue/Ticket URL
-  
-  tags        String[] // Array de tags customizáveis
-  
+
+  author      String?
+  commitHash  String?
+  prUrl       String?
+  issueUrl    String?
+
+  tags        String[]
+
   date        DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -54,4 +57,53 @@ model ChangelogEntry {
   @@index([date])
   @@index([version])
   @@map("changelog_entries")
+}
+
+// ─────── NEW: Roadmap & Sprints ───────
+model RoadmapItem {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?   @db.Text
+  status      String    @default("planned")  // planned, in_progress, completed, cancelled
+  priority    String?   // low, medium, high, critical
+  sprint      String?   // S1, S2, "Q1 2026", etc.
+
+  startDate   DateTime?
+  targetDate  DateTime?
+  completedAt DateTime?
+
+  tags        String[]
+  order       Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([sprint])
+  @@map("roadmap_items")
+}
+
+// ─────── NEW: Notes ───────
+model Note {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title     String
+  content   String   @db.Text  // Markdown supported
+  pinned    Boolean  @default(false)
+  color     String?  // Optional pastel color tag
+
+  tags      String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([pinned])
+  @@map("notes")
 }
